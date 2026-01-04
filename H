@@ -1,0 +1,517 @@
+-- Script dùng cho EXECUTOR (Synapse, KRNL, Fluxus, etc.)
+if not writefile or not getcustomasset then
+	warn("Executor không hỗ trợ writefile/getcustomasset!")
+	return
+end
+
+local player = game:GetService("Players").LocalPlayer
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+-- ===== TẠO CIRCULAR IMAGE GUI =====
+local CircularGui = Instance.new("ScreenGui")
+CircularGui.Parent = game:GetService("CoreGui")
+CircularGui.Name = "CircularImageGUI"
+CircularGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local imageFrame = Instance.new("ImageLabel")
+imageFrame.Size = UDim2.new(0, 50, 0, 50)
+imageFrame.Position = UDim2.new(0.5, -25, 0.2, -25)
+imageFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+imageFrame.BackgroundTransparency = 0
+imageFrame.ScaleType = Enum.ScaleType.Crop
+imageFrame.Active = true
+imageFrame.Parent = CircularGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(1, 0)
+uiCorner.Parent = imageFrame
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Thickness = 1.5
+uiStroke.Color = Color3.fromRGB(0, 100, 255)
+uiStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+uiStroke.Parent = imageFrame
+
+local loadingText = Instance.new("TextLabel")
+loadingText.Size = UDim2.new(0.9, 0, 0.9, 0)
+loadingText.Position = UDim2.new(0.05, 0, 0.05, 0)
+loadingText.BackgroundTransparency = 1
+loadingText.Text = "Loading..."
+loadingText.TextColor3 = Color3.fromRGB(255, 255, 255)
+loadingText.TextScaled = true
+loadingText.Font = Enum.Font.GothamBold
+loadingText.Parent = imageFrame
+
+-- ===== DRAGGING CHO CIRCULAR IMAGE =====
+local circleDragging = false
+local circleDragStart
+local circleStartPos
+
+imageFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        circleDragging = true
+        circleDragStart = input.Position
+        circleStartPos = imageFrame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                circleDragging = false
+            end
+        end)
+    end
+end)
+
+imageFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if circleDragging then
+            local delta = input.Position - circleDragStart
+            imageFrame.Position = UDim2.new(
+                circleStartPos.X.Scale, 
+                circleStartPos.X.Offset + delta.X, 
+                circleStartPos.Y.Scale, 
+                circleStartPos.Y.Offset + delta.Y
+            )
+        end
+    end
+end)
+
+-- ===== TẠO MENU GUI =====
+local MenuGui = Instance.new("ScreenGui")
+MenuGui.Name = "GradientUI"
+MenuGui.ResetOnSpawn = false
+MenuGui.Parent = game:GetService("CoreGui")
+
+-- Container cho particles ĐỂ NGOÀI để không bị mất khi frame tắt
+local particleContainer = Instance.new("Frame")
+particleContainer.Name = "ParticleContainer"
+particleContainer.Size = UDim2.new(1, 0, 1, 0)
+particleContainer.BackgroundTransparency = 1
+particleContainer.ClipsDescendants = false
+particleContainer.ZIndex = 10
+particleContainer.Parent = MenuGui
+
+local frame = Instance.new("Frame")
+frame.Name = "MainFrame"
+frame.Size = UDim2.new(0, 164, 0, 209)
+frame.Position = UDim2.new(0.5, -82, 0.4, -102)
+frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+frame.BackgroundTransparency = 0.4
+frame.Visible = false
+frame.ClipsDescendants = false
+frame.Parent = MenuGui
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(0, 255, 246)
+stroke.Thickness = 2
+stroke.Parent = frame
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = frame
+
+local title = Instance.new("TextLabel")
+title.Name = "MonHubText"
+title.Size = UDim2.new(1, -20, 0, 20)
+title.Position = UDim2.new(0, 10, 0, 3)
+title.BackgroundTransparency = 1
+title.Text = "MON'S HELPER"
+title.TextColor3 = Color3.fromRGB(0, 255, 246)
+title.TextSize = 16
+title.Font = Enum.Font.Arcade
+title.TextXAlignment = Enum.TextXAlignment.Center
+title.TextYAlignment = Enum.TextYAlignment.Center
+title.TextTransparency = 1
+title.Parent = frame
+
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 200, 246)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 255, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 255, 246))
+}
+gradient.Rotation = 0
+gradient.Parent = title
+
+-- Lưu trữ các button và trạng thái
+local buttons = {}
+local buttonStates = {}
+
+-- ===== HÀM TẠO PARTICLE EFFECT =====
+local function createParticle(frameAbsPos, frameAbsSize)
+    local particle = Instance.new("Frame")
+    particle.Size = UDim2.new(0, math.random(3, 8), 0, math.random(3, 8))
+    
+    -- Tính vị trí tuyệt đối từ frame position
+    local screenSize = particleContainer.AbsoluteSize
+    local randomX = math.random(10, frameAbsSize.X - 10)
+    local randomY = math.random(30, frameAbsSize.Y - 30)
+    
+    local startX = (frameAbsPos.X + randomX) / screenSize.X
+    local startY = (frameAbsPos.Y + randomY) / screenSize.Y
+    
+    particle.Position = UDim2.new(startX, 0, startY, 0)
+    
+    -- Random màu
+    local color
+    if math.random(1, 2) == 1 then
+        color = Color3.fromRGB(255, 255, 255)
+    else
+        color = Color3.fromRGB(0, 255, 246)
+    end
+    particle.BackgroundColor3 = color
+    
+    particle.BackgroundTransparency = 0
+    particle.BorderSizePixel = 0
+    particle.ZIndex = 10
+    particle.Parent = particleContainer
+    
+    local particleCorner = Instance.new("UICorner")
+    particleCorner.CornerRadius = UDim.new(1, 0)
+    particleCorner.Parent = particle
+    
+    -- Random hướng bay
+    local endX = startX + math.random(-50, 50) / 1000
+    local endY = startY - math.random(30, 80) / 1000
+    
+    local tweenInfo = TweenInfo.new(
+        math.random(40, 70) / 100,
+        Enum.EasingStyle.Quad,
+        Enum.EasingDirection.Out
+    )
+    
+    local tween1 = TweenService:Create(particle, tweenInfo, {
+        Position = UDim2.new(endX, 0, endY, 0),
+        BackgroundTransparency = 1
+    })
+    
+    tween1:Play()
+    
+    tween1.Completed:Connect(function()
+        particle:Destroy()
+    end)
+end
+
+-- Hàm tạo hiệu ứng bóc hơi
+local function createEvaporateEffect()
+    local frameAbsPos = frame.AbsolutePosition
+    local frameAbsSize = frame.AbsoluteSize
+    
+    for i = 1, math.random(40, 50) do
+        spawn(function()
+            wait(math.random(0, 50) / 200)
+            createParticle(frameAbsPos, frameAbsSize)
+        end)
+    end
+end
+
+-- Hàm tạo button
+local function createButton(name, yPos, callback)
+    local container = Instance.new("Frame")
+    container.Name = name .. "Container"
+    container.Size = UDim2.new(1, -10, 0, 30)
+    container.Position = UDim2.new(0, 5, 0, yPos)
+    container.BackgroundColor3 = Color3.fromRGB(0, 255, 246)
+    container.BackgroundTransparency = 1
+    container.Parent = frame
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = container
+
+    local btnStroke = Instance.new("UIStroke")
+    btnStroke.Color = Color3.fromRGB(0, 255, 246)
+    btnStroke.Thickness = 0.5
+    btnStroke.Transparency = 1
+    btnStroke.Parent = container
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -20, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = 13
+    label.Font = Enum.Font.Arcade
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.TextTransparency = 1
+    label.Parent = container
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = container
+
+    local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    buttonStates[name] = false
+
+    local function updateButtonAppearance(active)
+        if active then
+            TweenService:Create(container, tweenInfo, {
+                BackgroundColor3 = Color3.fromRGB(0, 200, 200),
+                BackgroundTransparency = 0.3
+            }):Play()
+            TweenService:Create(btnStroke, tweenInfo, {
+                Color = Color3.fromRGB(0, 255, 255),
+                Transparency = 0
+            }):Play()
+        else
+            TweenService:Create(container, tweenInfo, {
+                BackgroundColor3 = Color3.fromRGB(0, 255, 246),
+                BackgroundTransparency = 0.75
+            }):Play()
+            TweenService:Create(btnStroke, tweenInfo, {
+                Color = Color3.fromRGB(0, 255, 246),
+                Transparency = 0
+            }):Play()
+        end
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        buttonStates[name] = not buttonStates[name]
+        updateButtonAppearance(buttonStates[name])
+        
+        if callback then
+            callback(buttonStates[name])
+        end
+    end)
+    
+    btn.MouseEnter:Connect(function()
+        if not buttonStates[name] then
+            TweenService:Create(container, tweenInfo, {BackgroundTransparency = 0.6}):Play()
+        end
+    end)
+    
+    btn.MouseLeave:Connect(function()
+        if not buttonStates[name] then
+            TweenService:Create(container, tweenInfo, {BackgroundTransparency = 0.75}):Play()
+        end
+    end)
+    
+    table.insert(buttons, {
+        container = container, 
+        label = label, 
+        stroke = btnStroke,
+        name = name,
+        updateAppearance = updateButtonAppearance
+    })
+end
+
+-- Tạo các button
+createButton("DESYNC V3", 28, function(active)
+    print("DESYNC V3", active)
+end)
+
+createButton("FLOATFLY", 63.7, function(active)
+    print("FLOATFLY", active)
+end)
+
+createButton("FLY TO BEST", 98, function(active)
+    print("FLY TO BEST", active)
+end)
+
+createButton("STEAL UPSTAIRS", 133, function(active)
+    print("STEAL UPSTAIRS", active)
+end)
+
+createButton("MON HUB", 168, function(active)
+    print("MON HUB", active)
+end)
+
+local credit = Instance.new("TextLabel")
+credit.Name = "CreditText"
+credit.Size = UDim2.new(1, -20, 0, 18)
+credit.Position = UDim2.new(0, 5, 1, -16)
+credit.BackgroundTransparency = 1
+credit.Text = "Design Ui By VN"
+credit.TextColor3 = Color3.fromRGB(255, 255, 255)
+credit.TextSize = 8
+credit.Font = Enum.Font.Code
+credit.TextTransparency = 1
+credit.TextXAlignment = Enum.TextXAlignment.Left
+credit.TextYAlignment = Enum.TextYAlignment.Center
+credit.Parent = frame
+
+-- Dragging cho menu
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+frame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- ===== LOGIC MỞ/ĐÓNG MENU VỚI ANIMATION =====
+local menuOpen = false
+local frameTweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local fadeTweenInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+-- Hàm animation mở menu
+local function openMenu()
+    menuOpen = true
+    frame.Visible = true
+    frame.Size = UDim2.new(0, 164, 0, 0)
+    
+    TweenService:Create(frame, frameTweenInfo, {
+        Size = UDim2.new(0, 164, 0, 209)
+    }):Play()
+    
+    wait(0.15)
+    
+    TweenService:Create(title, fadeTweenInfo, {
+        TextTransparency = 0
+    }):Play()
+    
+    for i, btnData in ipairs(buttons) do
+        spawn(function()
+            wait(i * 0.05)
+            
+            local isActive = buttonStates[btnData.name]
+            if isActive then
+                btnData.container.BackgroundTransparency = 0.3
+                btnData.container.BackgroundColor3 = Color3.fromRGB(0, 200, 200)
+                btnData.stroke.Color = Color3.fromRGB(0, 255, 255)
+            else
+                btnData.container.BackgroundTransparency = 0.75
+                btnData.container.BackgroundColor3 = Color3.fromRGB(0, 255, 246)
+                btnData.stroke.Color = Color3.fromRGB(0, 255, 246)
+            end
+            
+            TweenService:Create(btnData.label, fadeTweenInfo, {
+                TextTransparency = 0
+            }):Play()
+            TweenService:Create(btnData.stroke, fadeTweenInfo, {
+                Transparency = 0
+            }):Play()
+        end)
+    end
+    
+    wait(0.25)
+    TweenService:Create(credit, fadeTweenInfo, {
+        TextTransparency = 0.5
+    }):Play()
+end
+
+-- Hàm animation đóng menu với hiệu ứng bóc hơi (particles TIẾP TỤC bay sau khi GUI tắt)
+local function closeMenu()
+    menuOpen = false
+    
+    -- BẮT ĐẦU HIỆU ỨNG BÓC HƠI NGAY
+    createEvaporateEffect()
+    
+    local quickFade = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    
+    TweenService:Create(title, quickFade, {
+        TextTransparency = 1
+    }):Play()
+    
+    TweenService:Create(credit, quickFade, {
+        TextTransparency = 1
+    }):Play()
+    
+    for _, btnData in ipairs(buttons) do
+        TweenService:Create(btnData.label, quickFade, {
+            TextTransparency = 1
+        }):Play()
+        TweenService:Create(btnData.stroke, quickFade, {
+            Transparency = 1
+        }):Play()
+        TweenService:Create(btnData.container, quickFade, {
+            BackgroundTransparency = 1
+        }):Play()
+    end
+    
+    TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Size = UDim2.new(0, 164, 0, 0)
+    }):Play()
+    
+    TweenService:Create(stroke, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Transparency = 1
+    }):Play()
+    
+    wait(0.3)
+    
+    -- Frame tắt NHƯNG particles vẫn bay vì chúng ở trong particleContainer (MenuGui)
+    frame.Visible = false
+    frame.Size = UDim2.new(0, 164, 0, 209)
+    frame.BackgroundTransparency = 0.4
+    stroke.Transparency = 0
+end
+
+-- Click vào circular image để toggle menu
+imageFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if not circleDragging then
+            if menuOpen then
+                closeMenu()
+            else
+                openMenu()
+            end
+        end
+    end
+end)
+
+-- ===== TẢI ẢNH TỪ GITHUB =====
+spawn(function()
+    local success, result = pcall(function()
+        local imageUrl = "https://raw.githubusercontent.com/okreplit-coder/Yesso9999/refs/heads/main/1764729568091%7E2.jpg"
+        local imageData = game:HttpGet(imageUrl)
+        writefile("circular_image.jpg", imageData)
+        imageFrame.Image = getcustomasset("circular_image.jpg")
+        loadingText.Visible = false
+        print("✅ Đã load ảnh thành công!")
+    end)
+    
+    if not success then
+        loadingText.Text = "❌"
+        loadingText.TextColor3 = Color3.fromRGB(255, 50, 50)
+        warn("Lỗi load ảnh:", result)
+    end
+end)
+
+-- ===== ĐỔI MÀU VIỀN =====
+spawn(function()
+    while true do
+        TweenService:Create(uiStroke, TweenInfo.new(1, Enum.EasingStyle.Sine), {
+            Color = Color3.fromRGB(0, 255, 246)
+        }):Play()
+        wait(2)
+        TweenService:Create(uiStroke, TweenInfo.new(1, Enum.EasingStyle.Sine), {
+            Color = Color3.fromRGB(255, 255, 255)
+        }):Play()
+        wait(2)
+    end
+end)
+
+print("✅ Script loaded! Click vào circular image để mở/đóng menu!")
